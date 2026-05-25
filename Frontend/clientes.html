@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clientes - TaxNPilot</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-mark">T</div>
+        <div>
+          <strong>TaxNPilot</strong>
+          <span>Gestión contable</span>
+        </div>
+      </div>
+
+      <nav class="nav" aria-label="Navegación principal">
+        <a href="dashboard.html">Dashboard</a>
+        <a class="active" href="clientes.html">Clientes</a>
+        <a href="ingresos.html">Ingresos</a>
+        <a href="egresos.html">Egresos</a>
+        <a href="categorias.html">Categorías</a>
+        <a href="reportes.html">Reportes</a>
+      </nav>
+
+      <div class="sidebar-spacer"></div>
+      <a class="logout-link" href="index.html" data-logout>Cerrar sesión</a>
+    </aside>
+
+    <main class="main">
+      <header class="page-header">
+        <div class="page-title">
+          <h1>Clientes</h1>
+          <p>Gestiona la cartera de clientes asociada a tu usuario.</p>
+        </div>
+        <button class="btn btn-primary" type="button" id="newClientButton">Nuevo cliente</button>
+      </header>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Directorio</h2>
+            <p>Datos de clientes</p>
+          </div>
+        </div>
+
+        <div class="toolbar-shell">
+          <div class="toolbar">
+            <div class="search">
+              <input type="search" id="searchInput" placeholder="Buscar por nombre, RFC o correo">
+            </div>
+            <span class="badge badge-warning" id="clientCount">0 clientes</span>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>RFC</th>
+                <th>Teléfono</th>
+                <th>Correo</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="clientRows"></tbody>
+          </table>
+          <div class="empty-state" id="emptyState">Cargando clientes...</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal" id="clientModal" aria-hidden="true">
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-body">
+        <h2 id="modalTitle">Nuevo cliente</h2>
+        <p>Estos campos se guardan en MongoDB por medio del backend.</p>
+
+        <form id="clientForm" novalidate>
+          <div class="field">
+            <label for="nombre">Nombre completo</label>
+            <input type="text" id="nombre" name="nombre" autocomplete="name">
+            <span class="field-error">El nombre es obligatorio.</span>
+          </div>
+
+          <div class="field">
+            <label for="rfc">RFC</label>
+            <input type="text" id="rfc" name="rfc" maxlength="13">
+            <span class="field-error">Ingresa un RFC válido de 12 o 13 caracteres.</span>
+          </div>
+
+          <div class="field">
+            <label for="telefono">Teléfono</label>
+            <input type="tel" id="telefono" name="telefono" inputmode="numeric">
+            <span class="field-error">Usa solo números, mínimo 10 dígitos.</span>
+          </div>
+
+          <div class="field">
+            <label for="email">Correo electrónico</label>
+            <input type="email" id="email" name="email" autocomplete="email">
+            <span class="field-error">Ingresa un correo válido.</span>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn btn-secondary" type="button" id="cancelButton">Cancelar</button>
+            <button class="btn btn-primary" type="submit" id="saveClientButton" disabled>Guardar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="deleteModal" aria-hidden="true">
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="deleteTitle">
+      <div class="modal-body">
+        <h2 id="deleteTitle">Eliminar cliente</h2>
+        <p id="deleteText">Confirma la eliminación del cliente seleccionado.</p>
+        <div class="form-actions">
+          <button class="btn btn-secondary" type="button" id="cancelDeleteButton">Cancelar</button>
+          <button class="btn btn-danger" type="button" id="confirmDeleteButton">Eliminar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">Cliente guardado.</div>
+
+  <script src="api.js"></script>
+  <script>
+    const isAuthenticated = window.taxApi.requireAuth();
+    if (isAuthenticated) {
+      window.taxApi.setupLogout();
+    }
+
+    let clients = [];
+    let editingId = null;
+    let deletingId = null;
+
+    const rows = document.getElementById("clientRows");
+    const emptyState = document.getElementById("emptyState");
+    const clientCount = document.getElementById("clientCount");
+    const searchInput = document.getElementById("searchInput");
+    const clientModal = document.getElementById("clientModal");
+    const deleteModal = document.getElementById("deleteModal");
+    const clientForm = document.getElementById("clientForm");
+    const saveClientButton = document.getElementById("saveClientButton");
+    const toast = document.getElementById("toast");
+
+    const fields = {
+      nombre: document.getElementById("nombre"),
+      rfc: document.getElementById("rfc"),
+      telefono: document.getElementById("telefono"),
+      email: document.getElementById("email")
+    };
+
+    function openModal(modal) {
+      modal.classList.add("open");
+      modal.setAttribute("aria-hidden", "false");
+    }
+
+    function closeModal(modal) {
+      modal.classList.remove("open");
+      modal.setAttribute("aria-hidden", "true");
+    }
+
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 1800);
+    }
+
+    function filteredClients() {
+      const query = searchInput.value.trim().toLowerCase();
+      if (!query) return clients;
+
+      return clients.filter((client) =>
+        [client.nombre, client.rfc, client.telefono || "", client.email].some((value) => value.toLowerCase().includes(query))
+      );
+    }
+
+    function renderClients() {
+      rows.innerHTML = "";
+      const visibleClients = filteredClients();
+
+      visibleClients.forEach((client) => {
+        const row = document.createElement("tr");
+
+        ["nombre", "rfc", "telefono", "email"].forEach((key) => {
+          const cell = document.createElement("td");
+          cell.textContent = client[key] || "";
+          row.appendChild(cell);
+        });
+
+        const actions = document.createElement("td");
+        actions.className = "actions";
+
+        const edit = document.createElement("button");
+        edit.className = "btn btn-secondary btn-small";
+        edit.type = "button";
+        edit.textContent = "Editar";
+        edit.addEventListener("click", () => startEdit(client._id));
+
+        const remove = document.createElement("button");
+        remove.className = "btn btn-danger btn-small";
+        remove.type = "button";
+        remove.textContent = "Borrar";
+        remove.addEventListener("click", () => startDelete(client._id));
+
+        actions.append(edit, remove);
+        row.appendChild(actions);
+        rows.appendChild(row);
+      });
+
+      emptyState.textContent = clients.length ? "No hay clientes que coincidan con la búsqueda." : "No hay clientes registrados.";
+      emptyState.style.display = visibleClients.length ? "none" : "block";
+      clientCount.textContent = `${visibleClients.length} ${visibleClients.length === 1 ? "cliente" : "clientes"}`;
+    }
+
+    function resetForm() {
+      clientForm.reset();
+      editingId = null;
+      Object.values(fields).forEach((input) => input.classList.remove("is-invalid", "is-valid"));
+      document.getElementById("modalTitle").textContent = "Nuevo cliente";
+      updateSaveState();
+    }
+
+    function startEdit(id) {
+      const client = clients.find((item) => item._id === id);
+      if (!client) return;
+
+      editingId = id;
+      Object.entries(fields).forEach(([key, input]) => {
+        input.value = client[key] || "";
+        input.classList.remove("is-invalid");
+        input.classList.add("is-valid");
+      });
+
+      document.getElementById("modalTitle").textContent = "Editar cliente";
+      updateSaveState();
+      openModal(clientModal);
+    }
+
+    function startDelete(id) {
+      const client = clients.find((item) => item._id === id);
+      if (!client) return;
+
+      deletingId = id;
+      document.getElementById("deleteText").textContent = `Se eliminará a ${client.nombre}. Esta acción no se puede deshacer.`;
+      openModal(deleteModal);
+    }
+
+    function validateForm() {
+      const values = {
+        nombre: fields.nombre.value.trim(),
+        rfc: fields.rfc.value.trim().toUpperCase(),
+        telefono: fields.telefono.value.trim(),
+        email: fields.email.value.trim().toLowerCase()
+      };
+
+      const invalid = {
+        nombre: values.nombre === "",
+        rfc: !/^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/.test(values.rfc),
+        telefono: !/^\d{10,}$/.test(values.telefono),
+        email: !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)
+      };
+
+      Object.entries(invalid).forEach(([key, isInvalid]) => fields[key].classList.toggle("is-invalid", isInvalid));
+      Object.entries(invalid).forEach(([key, isInvalid]) => fields[key].classList.toggle("is-valid", !isInvalid));
+      return Object.values(invalid).every((value) => !value) ? values : null;
+    }
+
+    function getLiveValidity() {
+      const values = {
+        nombre: fields.nombre.value.trim(),
+        rfc: fields.rfc.value.trim().toUpperCase(),
+        telefono: fields.telefono.value.trim(),
+        email: fields.email.value.trim().toLowerCase()
+      };
+
+      return {
+        nombre: values.nombre !== "",
+        rfc: /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/.test(values.rfc),
+        telefono: /^\d{10,}$/.test(values.telefono),
+        email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)
+      };
+    }
+
+    function updateSaveState() {
+      const validity = getLiveValidity();
+      saveClientButton.disabled = !Object.values(validity).every(Boolean);
+
+      Object.entries(validity).forEach(([key, isValid]) => {
+        const input = fields[key];
+        const hasValue = input.value.trim() !== "";
+        input.classList.toggle("is-valid", isValid);
+        input.classList.toggle("is-invalid", hasValue && !isValid);
+      });
+    }
+
+    async function loadClients() {
+      try {
+        emptyState.textContent = "Cargando clientes...";
+        emptyState.style.display = "block";
+        clients = await window.taxApi.getClients();
+        renderClients();
+      } catch (error) {
+        rows.innerHTML = "";
+        emptyState.textContent = `No se pudieron cargar clientes: ${error.message}`;
+        emptyState.style.display = "block";
+      }
+    }
+
+    document.getElementById("newClientButton").addEventListener("click", () => {
+      resetForm();
+      openModal(clientModal);
+    });
+
+    document.getElementById("cancelButton").addEventListener("click", () => closeModal(clientModal));
+    document.getElementById("cancelDeleteButton").addEventListener("click", () => closeModal(deleteModal));
+    searchInput.addEventListener("input", renderClients);
+
+    clientForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const values = validateForm();
+      if (!values) return;
+
+      saveClientButton.disabled = true;
+      saveClientButton.classList.add("is-loading");
+
+      try {
+        if (editingId) {
+          await window.taxApi.updateClient(editingId, values);
+          showToast("Cliente actualizado.");
+        } else {
+          await window.taxApi.createClient(values);
+          showToast("Cliente guardado.");
+        }
+
+        closeModal(clientModal);
+        resetForm();
+        await loadClients();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        saveClientButton.classList.remove("is-loading");
+        saveClientButton.disabled = false;
+        updateSaveState();
+      }
+    });
+
+    document.getElementById("confirmDeleteButton").addEventListener("click", async () => {
+      try {
+        await window.taxApi.deleteClient(deletingId);
+        closeModal(deleteModal);
+        await loadClients();
+        showToast("Cliente eliminado.");
+      } catch (error) {
+        showToast(error.message);
+      }
+    });
+
+    Object.values(fields).forEach((input) => {
+      input.addEventListener("input", updateSaveState);
+    });
+
+    if (isAuthenticated) {
+      loadClients();
+    }
+  </script>
+</body>
+</html>

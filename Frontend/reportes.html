@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reportes - TaxNPilot</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-mark">T</div>
+        <div>
+          <strong>TaxNPilot</strong>
+          <span>Gestión contable</span>
+        </div>
+      </div>
+
+      <nav class="nav" aria-label="Navegación principal">
+        <a href="dashboard.html">Dashboard</a>
+        <a href="clientes.html">Clientes</a>
+        <a href="ingresos.html">Ingresos</a>
+        <a href="egresos.html">Egresos</a>
+        <a href="categorias.html">Categorías</a>
+        <a class="active" href="reportes.html">Reportes</a>
+      </nav>
+
+      <div class="sidebar-spacer"></div>
+      <a class="logout-link" href="index.html" data-logout>Cerrar sesión</a>
+    </aside>
+
+    <main class="main">
+      <header class="page-header">
+        <div class="page-title">
+          <h1>Reportes</h1>
+          <p>Filtra movimientos para generar resúmenes financieros reales.</p>
+        </div>
+      </header>
+
+      <section class="grid two-col">
+        <form class="panel form-card" id="reportForm" novalidate>
+          <div class="panel-header">
+            <div>
+              <h2>Filtros</h2>
+            </div>
+          </div>
+
+          <div class="form-content">
+            <div class="grid form-grid">
+              <div class="field">
+                <label for="from">Fecha inicial</label>
+                <input type="date" id="from" name="from">
+                <span class="field-error">La fecha inicial no puede ser mayor a la final.</span>
+              </div>
+
+              <div class="field">
+                <label for="to">Fecha final</label>
+                <input type="date" id="to" name="to">
+                <span class="field-error">La fecha final no puede ser menor a la inicial.</span>
+              </div>
+            </div>
+
+            <div class="grid form-grid">
+              <div class="field">
+                <label for="clienteId">Cliente</label>
+                <select id="clienteId" name="clienteId">
+                  <option value="">Cargando clientes...</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="tipo">Tipo</label>
+                <select id="tipo" name="tipo">
+                  <option value="">Ingresos y egresos</option>
+                  <option value="ingreso">Solo ingresos</option>
+                  <option value="egreso">Solo egresos</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button class="btn btn-secondary" type="reset" id="clearButton">Limpiar</button>
+              <button class="btn btn-primary" type="submit" id="generateReportButton">Generar reporte</button>
+            </div>
+          </div>
+        </form>
+
+        <aside class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Resultado</h2>
+              <p>Resumen.</p>
+            </div>
+          </div>
+          <div class="summary-list" id="summary">
+            <div class="summary-row">
+              <span>Ingresos</span>
+              <strong class="value-success" id="summaryIngresos">$0.00</strong>
+            </div>
+            <div class="summary-row">
+              <span>Egresos</span>
+              <strong class="value-danger" id="summaryEgresos">$0.00</strong>
+            </div>
+            <div class="summary-row">
+              <span>Balance</span>
+              <strong class="value-brand" id="summaryBalance">$0.00</strong>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="section panel">
+        <div class="panel-header">
+          <div>
+            <h2>Detalle del reporte</h2>
+            <p>Operaciones filtradas desde MongoDB.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Tipo</th>
+                <th>Cliente</th>
+                <th>Categoría</th>
+                <th>Monto</th>
+              </tr>
+            </thead>
+            <tbody id="operationRows"></tbody>
+          </table>
+          <div class="empty-state" id="emptyState">Cargando operaciones...</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast">Reporte generado.</div>
+
+  <script src="api.js"></script>
+  <script>
+    const isAuthenticated = window.taxApi.requireAuth();
+    if (isAuthenticated) {
+      window.taxApi.setupLogout();
+    }
+
+    const form = document.getElementById("reportForm");
+    const from = document.getElementById("from");
+    const to = document.getElementById("to");
+    const clienteId = document.getElementById("clienteId");
+    const tipo = document.getElementById("tipo");
+    const rows = document.getElementById("operationRows");
+    const emptyState = document.getElementById("emptyState");
+    const toast = document.getElementById("toast");
+    const generateReportButton = document.getElementById("generateReportButton");
+    const summaryFields = {
+      ingresos: document.getElementById("summaryIngresos"),
+      egresos: document.getElementById("summaryEgresos"),
+      balance: document.getElementById("summaryBalance")
+    };
+
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 2000);
+    }
+
+    function getClientName(operation) {
+      if (operation.clienteId && typeof operation.clienteId === "object") {
+        return operation.clienteId.nombre || "Cliente sin nombre";
+      }
+
+      return "Cliente no disponible";
+    }
+
+    function renderSummary(summary) {
+      summaryFields.ingresos.textContent = window.taxApi.formatCurrency(summary.totalIngresos);
+      summaryFields.egresos.textContent = window.taxApi.formatCurrency(summary.totalEgresos);
+      summaryFields.balance.textContent = window.taxApi.formatCurrency(summary.balance);
+    }
+
+    function renderOperations(operations) {
+      rows.innerHTML = "";
+
+      operations.forEach((operation) => {
+        const row = document.createElement("tr");
+
+        const dateCell = document.createElement("td");
+        dateCell.textContent = window.taxApi.formatDate(operation.fecha);
+
+        const typeCell = document.createElement("td");
+        const badge = document.createElement("span");
+        badge.className = operation.tipo === "ingreso" ? "badge badge-success" : "badge badge-danger";
+        badge.textContent = operation.tipo === "ingreso" ? "Ingreso" : "Egreso";
+        typeCell.appendChild(badge);
+
+        const clientCell = document.createElement("td");
+        clientCell.textContent = getClientName(operation);
+
+        const categoryCell = document.createElement("td");
+        categoryCell.textContent = operation.categoria || "Sin categoría";
+
+        const amountCell = document.createElement("td");
+        amountCell.className = operation.tipo === "ingreso" ? "amount value-success" : "amount value-danger";
+        amountCell.textContent = window.taxApi.formatCurrency(operation.monto);
+
+        row.append(dateCell, typeCell, clientCell, categoryCell, amountCell);
+        rows.appendChild(row);
+      });
+
+      emptyState.style.display = operations.length ? "none" : "block";
+      emptyState.textContent = "No hay operaciones para los filtros seleccionados.";
+    }
+
+    function getFilters() {
+      return {
+        from: from.value,
+        to: to.value,
+        clienteId: clienteId.value,
+        tipo: tipo.value
+      };
+    }
+
+    async function loadClients() {
+      try {
+        const clients = await window.taxApi.getClients();
+        clienteId.innerHTML = '<option value="">Todos los clientes</option>';
+
+        clients.forEach((client) => {
+          const option = document.createElement("option");
+          option.value = client._id;
+          option.textContent = client.nombre;
+          clienteId.appendChild(option);
+        });
+      } catch (error) {
+        clienteId.innerHTML = '<option value="">No se pudieron cargar clientes</option>';
+        showToast(error.message);
+      }
+    }
+
+    async function loadReport(filters = {}) {
+      try {
+        emptyState.textContent = "Cargando operaciones...";
+        emptyState.style.display = "block";
+
+        const [summary, operations] = await Promise.all([
+          window.taxApi.getSummary(filters),
+          window.taxApi.getOperations(filters)
+        ]);
+
+        renderSummary(summary);
+        renderOperations(operations);
+      } catch (error) {
+        rows.innerHTML = "";
+        emptyState.textContent = `No se pudo generar el reporte: ${error.message}`;
+        emptyState.style.display = "block";
+      }
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const invalidRange = from.value && to.value && from.value > to.value;
+
+      from.classList.toggle("is-invalid", invalidRange);
+      to.classList.toggle("is-invalid", invalidRange);
+
+      if (invalidRange) return;
+
+      generateReportButton.textContent = "Generando";
+      generateReportButton.classList.add("is-loading");
+      generateReportButton.disabled = true;
+
+      try {
+        await loadReport(getFilters());
+        showToast("Reporte generado correctamente.");
+      } finally {
+        generateReportButton.textContent = "Generar reporte";
+        generateReportButton.classList.remove("is-loading");
+        generateReportButton.disabled = false;
+      }
+    });
+
+    document.getElementById("clearButton").addEventListener("click", () => {
+      setTimeout(() => loadReport(), 0);
+    });
+
+    [from, to].forEach((input) => input.addEventListener("input", () => {
+      from.classList.remove("is-invalid");
+      to.classList.remove("is-invalid");
+    }));
+
+    if (isAuthenticated) {
+      loadClients();
+      loadReport();
+    }
+  </script>
+</body>
+</html>

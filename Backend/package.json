@@ -1,0 +1,21 @@
+{
+  "name": "proyecto",
+  "version": "1.0.0",
+  "description": "",
+  "main": "Source/app.js",
+  "scripts": {
+    "start": "node Source/app.js",
+    "test": "node --check Source/app.js && node --check Source/middleware/authMiddleware.js && node --check routes/authRoutes.js && node --check routes/clientRoutes.js && node --check routes/operationRoutes.js && node --check routes/userRoutes.js && node --check routes/categoryRoutes.js && node --check models/User.js && node --check models/Client.js && node --check models/Operation.js && node --check models/Category.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.4.1"
+  }
+}

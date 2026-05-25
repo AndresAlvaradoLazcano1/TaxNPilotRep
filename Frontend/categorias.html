@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Categorías - TaxNPilot</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-mark">T</div>
+        <div>
+          <strong>TaxNPilot</strong>
+          <span>Gestión contable</span>
+        </div>
+      </div>
+
+      <nav class="nav" aria-label="Navegación principal">
+        <a href="dashboard.html">Dashboard</a>
+        <a href="clientes.html">Clientes</a>
+        <a href="ingresos.html">Ingresos</a>
+        <a href="egresos.html">Egresos</a>
+        <a class="active" href="categorias.html">Categorías</a>
+        <a href="reportes.html">Reportes</a>
+      </nav>
+
+      <div class="sidebar-spacer"></div>
+      <a class="logout-link" href="index.html" data-logout>Cerrar sesión</a>
+    </aside>
+
+    <main class="main">
+      <header class="page-header">
+        <div class="page-title">
+          <h1>Categorías</h1>
+          <p>Clasifica ingresos y egresos con un catálogo guardado en backend.</p>
+        </div>
+        <button class="btn btn-primary" type="button" id="newCategoryButton">Nueva categoría</button>
+      </header>
+
+      <section class="grid two-col">
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Catálogo</h2>
+              <p>Categorias de Ingresos y Egresos</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Tipo sugerido</th>
+                  <th>Creada</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="categoryRows"></tbody>
+            </table>
+            <div class="empty-state" id="emptyState">Cargando categorías...</div>
+          </div>
+        </article>
+
+        <form class="panel form-card" id="categoryForm" novalidate>
+          <div class="panel-header">
+            <div>
+              <h2 id="formTitle">Agregar categoría</h2>
+              <p>Disponible para formularios de ingresos, egresos y reportes.</p>
+            </div>
+          </div>
+          <div class="form-content">
+            <div class="field">
+              <label for="nombre">Nombre</label>
+              <input type="text" id="nombre" placeholder="Ej. Honorarios">
+              <span class="field-error">El nombre es obligatorio.</span>
+            </div>
+            <div class="field">
+              <label for="tipo">Tipo sugerido</label>
+              <select id="tipo">
+                <option value="Ingreso">Ingreso</option>
+                <option value="Egreso">Egreso</option>
+                <option value="Ambos">Ambos</option>
+              </select>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-secondary" type="button" id="cancelEditButton">Cancelar</button>
+              <button class="btn btn-primary" type="submit" id="saveCategoryButton">Guardar categoría</button>
+            </div>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast">Categoría guardada.</div>
+
+  <script src="api.js"></script>
+  <script>
+    const isAuthenticated = window.taxApi.requireAuth();
+    if (isAuthenticated) {
+      window.taxApi.setupLogout();
+    }
+
+    let categories = [];
+    let editingId = null;
+
+    const rows = document.getElementById("categoryRows");
+    const emptyState = document.getElementById("emptyState");
+    const form = document.getElementById("categoryForm");
+    const formTitle = document.getElementById("formTitle");
+    const nombre = document.getElementById("nombre");
+    const tipo = document.getElementById("tipo");
+    const saveButton = document.getElementById("saveCategoryButton");
+    const toast = document.getElementById("toast");
+
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 1600);
+    }
+
+    function resetForm() {
+      form.reset();
+      editingId = null;
+      nombre.classList.remove("is-invalid");
+      formTitle.textContent = "Agregar categoría";
+      saveButton.textContent = "Guardar categoría";
+    }
+
+    function render() {
+      rows.innerHTML = "";
+
+      categories.forEach((category) => {
+        const row = document.createElement("tr");
+
+        const nameCell = document.createElement("td");
+        nameCell.textContent = category.nombre;
+
+        const typeCell = document.createElement("td");
+        const badge = document.createElement("span");
+        badge.className = category.tipo === "Egreso" ? "badge badge-danger" : "badge badge-success";
+        if (category.tipo === "Ambos") badge.className = "badge badge-warning";
+        badge.textContent = category.tipo;
+        typeCell.appendChild(badge);
+
+        const dateCell = document.createElement("td");
+        dateCell.textContent = window.taxApi.formatDate(category.createdAt);
+
+        const actions = document.createElement("td");
+        actions.className = "actions";
+
+        const edit = document.createElement("button");
+        edit.className = "btn btn-secondary btn-small";
+        edit.type = "button";
+        edit.textContent = "Editar";
+        edit.addEventListener("click", () => startEdit(category));
+
+        const remove = document.createElement("button");
+        remove.className = "btn btn-danger btn-small";
+        remove.type = "button";
+        remove.textContent = "Borrar";
+        remove.addEventListener("click", () => deleteCategory(category._id));
+
+        actions.append(edit, remove);
+        row.append(nameCell, typeCell, dateCell, actions);
+        rows.appendChild(row);
+      });
+
+      emptyState.style.display = categories.length ? "none" : "block";
+      emptyState.textContent = "No hay categorías registradas.";
+    }
+
+    function startEdit(category) {
+      editingId = category._id;
+      nombre.value = category.nombre;
+      tipo.value = category.tipo;
+      formTitle.textContent = "Editar categoría";
+      saveButton.textContent = "Actualizar categoría";
+      nombre.focus();
+    }
+
+    async function loadCategories() {
+      try {
+        emptyState.textContent = "Cargando categorías...";
+        emptyState.style.display = "block";
+        categories = await window.taxApi.getCategories();
+        render();
+      } catch (error) {
+        rows.innerHTML = "";
+        emptyState.textContent = `No se pudieron cargar categorías: ${error.message}`;
+        emptyState.style.display = "block";
+      }
+    }
+
+    async function deleteCategory(id) {
+      const category = categories.find((item) => item._id === id);
+      if (!category || !confirm(`¿Eliminar la categoría "${category.nombre}"?`)) return;
+
+      try {
+        await window.taxApi.deleteCategory(id);
+        showToast("Categoría eliminada.");
+        await loadCategories();
+      } catch (error) {
+        showToast(error.message);
+      }
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const invalid = nombre.value.trim() === "";
+      nombre.classList.toggle("is-invalid", invalid);
+      if (invalid) return;
+
+      saveButton.disabled = true;
+
+      try {
+        const data = {
+          nombre: nombre.value.trim(),
+          tipo: tipo.value
+        };
+
+        if (editingId) {
+          await window.taxApi.updateCategory(editingId, data);
+          showToast("Categoría actualizada.");
+        } else {
+          await window.taxApi.createCategory(data);
+          showToast("Categoría guardada.");
+        }
+
+        resetForm();
+        await loadCategories();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        saveButton.disabled = false;
+      }
+    });
+
+    nombre.addEventListener("input", () => nombre.classList.remove("is-invalid"));
+    document.getElementById("newCategoryButton").addEventListener("click", () => {
+      resetForm();
+      nombre.focus();
+    });
+    document.getElementById("cancelEditButton").addEventListener("click", resetForm);
+
+    if (isAuthenticated) {
+      loadCategories();
+    }
+  </script>
+</body>
+</html>

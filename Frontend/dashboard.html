@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard - TaxNPilot</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-mark">T</div>
+        <div>
+          <strong>TaxNPilot</strong>
+          <span>Gestión contable</span>
+        </div>
+      </div>
+
+      <nav class="nav" aria-label="Navegación principal">
+        <a class="active" href="dashboard.html">Dashboard</a>
+        <a href="clientes.html">Clientes</a>
+        <a href="ingresos.html">Ingresos</a>
+        <a href="egresos.html">Egresos</a>
+        <a href="categorias.html">Categorías</a>
+        <a href="reportes.html">Reportes</a>
+      </nav>
+
+      <div class="sidebar-spacer"></div>
+      <a class="logout-link" href="index.html" data-logout>Cerrar sesión</a>
+    </aside>
+
+    <main class="main">
+      <header class="page-header">
+        <div class="page-title">
+          <h1>Dashboard</h1>
+          <p>Resumen financiero general y actividad reciente.</p>
+        </div>
+        <a class="btn btn-primary" href="ingresos.html">Registrar ingreso</a>
+      </header>
+
+      <section class="grid stats-grid" aria-label="Indicadores financieros">
+        <article class="card">
+          <div class="stat-label">Total de ingresos</div>
+          <div class="stat-value value-success" id="totalIngresos">$0.00</div>
+          <div class="stat-note">Datos desde /api/operations/summary</div>
+        </article>
+
+        <article class="card">
+          <div class="stat-label">Total de egresos</div>
+          <div class="stat-value value-danger" id="totalEgresos">$0.00</div>
+          <div class="stat-note">Datos desde /api/operations/summary</div>
+        </article>
+
+        <article class="card">
+          <div class="stat-label">Balance</div>
+          <div class="stat-value value-brand" id="balance">$0.00</div>
+          <div class="stat-note">Ingresos menos egresos</div>
+        </article>
+      </section>
+
+      <section class="section grid two-col">
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Transacciones recientes</h2>
+              <p>Últimos movimientos registrados.</p>
+            </div>
+            <a class="btn btn-secondary" href="reportes.html">Ver reportes</a>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Tipo</th>
+                  <th>Cliente</th>
+                  <th>Categoría</th>
+                  <th>Monto</th>
+                </tr>
+              </thead>
+              <tbody id="operationRows"></tbody>
+            </table>
+            <div class="empty-state" id="operationsEmpty">Cargando operaciones...</div>
+          </div>
+        </article>
+
+        <aside class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Usuarios recientes</h2>
+              <p>Ultimos inicios de sesión</p>
+            </div>
+          </div>
+
+          <div class="summary-list" id="usersList">
+            <div class="empty-state">Cargando usuarios...</div>
+          </div>
+        </aside>
+      </section>
+    </main>
+  </div>
+
+  <script src="api.js"></script>
+  <script>
+    const isAuthenticated = window.taxApi.requireAuth();
+    if (isAuthenticated) {
+      window.taxApi.setupLogout();
+    }
+
+    const totals = {
+      ingresos: document.getElementById("totalIngresos"),
+      egresos: document.getElementById("totalEgresos"),
+      balance: document.getElementById("balance")
+    };
+    const operationRows = document.getElementById("operationRows");
+    const operationsEmpty = document.getElementById("operationsEmpty");
+    const usersList = document.getElementById("usersList");
+
+    function getClientName(operation) {
+      if (operation.clienteId && typeof operation.clienteId === "object") {
+        return operation.clienteId.nombre || "Cliente sin nombre";
+      }
+
+      return "Cliente no disponible";
+    }
+
+    function renderSummary(summary) {
+      totals.ingresos.textContent = window.taxApi.formatCurrency(summary.totalIngresos);
+      totals.egresos.textContent = window.taxApi.formatCurrency(summary.totalEgresos);
+      totals.balance.textContent = window.taxApi.formatCurrency(summary.balance);
+    }
+
+    function renderOperations(operations) {
+      operationRows.innerHTML = "";
+      const recent = operations.slice(0, 5);
+
+      recent.forEach((operation) => {
+        const row = document.createElement("tr");
+
+        const dateCell = document.createElement("td");
+        dateCell.textContent = window.taxApi.formatDate(operation.fecha);
+
+        const typeCell = document.createElement("td");
+        const badge = document.createElement("span");
+        badge.className = operation.tipo === "ingreso" ? "badge badge-success" : "badge badge-danger";
+        badge.textContent = operation.tipo === "ingreso" ? "Ingreso" : "Egreso";
+        typeCell.appendChild(badge);
+
+        const clientCell = document.createElement("td");
+        clientCell.textContent = getClientName(operation);
+
+        const categoryCell = document.createElement("td");
+        categoryCell.textContent = operation.categoria || "Sin categoría";
+
+        const amountCell = document.createElement("td");
+        amountCell.className = operation.tipo === "ingreso" ? "amount value-success" : "amount value-danger";
+        amountCell.textContent = window.taxApi.formatCurrency(operation.monto);
+
+        row.append(dateCell, typeCell, clientCell, categoryCell, amountCell);
+        operationRows.appendChild(row);
+      });
+
+      operationsEmpty.style.display = recent.length ? "none" : "block";
+      operationsEmpty.textContent = "No hay operaciones registradas.";
+    }
+
+    function renderUsers(users) {
+      usersList.innerHTML = "";
+
+      if (!users.length) {
+        usersList.innerHTML = '<div class="empty-state">No hay usuarios registrados.</div>';
+        return;
+      }
+
+      users.forEach((user) => {
+        const row = document.createElement("div");
+        row.className = "summary-row";
+
+        const name = document.createElement("span");
+        name.textContent = user.username;
+
+        const createdAt = document.createElement("strong");
+        createdAt.textContent = window.taxApi.formatDate(user.createdAt);
+
+        row.append(name, createdAt);
+        usersList.appendChild(row);
+      });
+    }
+
+    async function loadDashboard() {
+      try {
+        const [summary, operations, users] = await Promise.all([
+          window.taxApi.getSummary(),
+          window.taxApi.getOperations(),
+          window.taxApi.getUsers()
+        ]);
+
+        renderSummary(summary);
+        renderOperations(operations);
+        renderUsers(users);
+      } catch (error) {
+        operationsEmpty.textContent = `No se pudieron cargar datos: ${error.message}`;
+        operationsEmpty.style.display = "block";
+        usersList.innerHTML = `<div class="empty-state">No se pudieron cargar usuarios: ${error.message}</div>`;
+      }
+    }
+
+    if (isAuthenticated) {
+      loadDashboard();
+    }
+  </script>
+</body>
+</html>
