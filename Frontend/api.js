@@ -1,7 +1,7 @@
 const API_HOST = ["localhost", "127.0.0.1"].includes(window.location.hostname)
   ? window.location.hostname
   : "localhost";
-const API_BASE_URL = `http://${API_HOST}:3000`;
+const API_BASE_URL = "https://taxnpilotrep.onrender.com";
 const TOKEN_KEY = "taxnpilot_token";
 
 async function apiRequest(path, options = {}) {
