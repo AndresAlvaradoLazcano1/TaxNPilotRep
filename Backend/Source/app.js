@@ -11,9 +11,13 @@ const categoryRoutes = require("../routes/categoryRoutes");
 
 const app = express();
 
-// Permitir que el frontend local consuma la API del backend.
+
 app.use((req, res, next) => {
-  const allowedOrigins = ["http://localhost:4173", "http://127.0.0.1:4173"];
+  const allowedOrigins = [
+  "http://localhost:4173",
+  "http://127.0.0.1:4173",
+  process.env.FRONTEND_URL
+].filter(Boolean);
   const origin = req.header("Origin");
 
   if (allowedOrigins.includes(origin)) {
@@ -31,10 +35,10 @@ app.use((req, res, next) => {
   next();
 });
 
-//  conectar a Mongo
+
 connectDB();
 
-//Middleware para leer json
+
 
 app.use(express.json());
 
@@ -54,6 +58,8 @@ app.get("/", (req, res) => {
 app.use(authRoutes);
 app.use(userRoutes);
 
-app.listen(3000, () => {
-  console.log("Servidor corriendo en puerto 3000");
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Servidor corriendo en puerto ${PORT}`);
 });
